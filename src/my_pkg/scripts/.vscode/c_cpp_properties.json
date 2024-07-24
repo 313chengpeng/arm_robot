@@ -1,0 +1,23 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/cp/ROS/ws_rmrobot_0710/devel/include/**",
+        "/opt/ros/noetic/include/**",
+        "/home/cp/ROS/ws_rmrobot_0710/src/my_pkg/include/**",
+        "/home/cp/ROS/ws_rmrobot_0710/src/rm_msgs/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
