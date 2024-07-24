@@ -31,6 +31,9 @@ arm_current_height = 290/1000 # 假设当前的机械臂高度为270，后续在
 set_height = (sensor_target_height+bias)/1000
 move_completed = False
 catch_flag = 0
+height_limit_upper = 350/1000 # 机械臂的高度限制350mm
+height_limit_lower = 200/1000 # 机械臂的最低高度150mm
+
 
 move_state = 0
 # 用于判断机械臂动作阶段
@@ -40,6 +43,22 @@ move_state = 0
 # 4 
 pre_state = 0
 # 存储前一阶段的运动状态，用于高度调整后，重新设定目标点位
+
+
+# 目前感觉好像用不到PID控制器   
+class PIDController:
+    def __init__(self, Kp, Ki, Kd):
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.previous_error = 0
+        self.integral = 0
+
+    def calculate(self, error):
+        self.integral += error
+        derivative = error - self.previous_error
+        self.previous_error = error
+        return self.Kp * error + self.Ki * self.integral + self.Kd * derivative
 
 
 def adjust_height(data):
@@ -55,17 +74,21 @@ def adjust_height(data):
     rospy.loginfo('正在查询机械臂当前状态：')
     rospy.loginfo(f'查询结果：arm_current_height={arm_current_height}')
     set_height = arm_current_height - data
+    if set_height > height_limit_upper:
+        set_height = height_limit_upper
+    elif set_height < height_limit_lower:
+        set_height = height_limit_lower
     rospy.loginfo(f'set_height(adjust)= {set_height}')
     # set_height_cmd = Lift_Height()
     # set_height_cmd.height = int(set_height*1000)
     # set_height_cmd.speed = 30
-    moveL_target_pose_2 = MoveL()
-    moveL_target_pose_2.Pose = pose_data
-    moveL_target_pose_2.Pose.position.z = set_height
-    moveL_target_pose_2.speed = 0.1
-    moveL_pub.publish(moveL_target_pose_2)
+    moveL_target_pose_H = MoveL()
+    moveL_target_pose_H.Pose = pose_data
+    moveL_target_pose_H.Pose.position.z = set_height
+    moveL_target_pose_H.speed = 0.1
+    moveL_pub.publish(moveL_target_pose_H)
     rospy.loginfo(f'更新运动指令,向point2移动保持高度为{set_height*1000}mm')
-    rospy.loginfo(f"moveL_target_pose 更新目标：{moveL_target_pose_2}")
+    rospy.loginfo(f"moveL_target_pose 更新目标：{moveL_target_pose_H}")
     
     
     
@@ -105,10 +128,9 @@ def sensor_callback(data):
 
 def plan_state_callback(data):
     global move_completed,catch_flag,set_height,move_state  
-    if move_state == 1 or move_state == 2:
+    if move_state == 1 :
         if data.state:
-            rospy.loginfo('运动指令执行完毕')
-
+            rospy.loginfo('point2运动指令发送成功')
             if  catch_flag == 1:
                 rospy.loginfo("发布抓取命令")
                 gripper_cmd = Gripper_Pick()
@@ -121,50 +143,56 @@ def plan_state_callback(data):
                 catch_position_pub.publish(grip_msg)
                 rospy.loginfo("抓取命令发布完成，等待释放")
                 rospy.sleep(3)
-                catch_flag = 0 # 仅执行一次
-            # elif catch_flag == 2:
-            #     rospy.loginfo("发布释放命令")
-            #     grip_msg = Gripper_Set()
-            #     grip_msg.position = 1000  # 设置手爪打开位置
-            #     catch_position_pub.publish(grip_msg)
-            #     rospy.loginfo("释放命令发布完成，等待抓取")
-            #     rospy.sleep(3)
+                catch_flag = 0 # 仅执行一次抓取
+            rospy.sleep(2)
+            set_point2()
+            move_state=2
+            rospy.sleep(0.1)
+
+            
         else:
-            rospy.logerr('运动指令未成功执行')
-    if  move_state == 3:
+            rospy.logerr('point2运动指令未成功执行,尝试重新发送')
+            set_point1()
+            rospy.sleep(0.1)
+    elif move_state == 2 :
         if data.state:
-            rospy.loginfo('运动指令执行完毕')
+            rospy.loginfo('point1运动指令发送成功')
+            rospy.sleep(2)
+            set_point1()
+            move_state=1
+            rospy.sleep(0.1)
+        else:
+            rospy.logerr('point1运动指令未成功执行,尝试重新发送')
+            set_point2()
+            rospy.sleep(0.1)
+    elif move_state == 3:
+        if data.state:
+            rospy.loginfo('高度调节指令执行完毕')
             move_state = pre_state
             if move_state ==1:
-                moveL_target_pose_2 = MoveL()
-                moveL_target_pose_2.Pose.position.x = -0.2845299
-                moveL_target_pose_2.Pose.position.y = 0.31842098
-                moveL_target_pose_2.Pose.position.z = set_height
-                moveL_target_pose_2.Pose.orientation.x = 0.6501861
-                moveL_target_pose_2.Pose.orientation.y = -0.759086
-                moveL_target_pose_2.Pose.orientation.z = -0.031065
-                moveL_target_pose_2.Pose.orientation.w = -0.008943
-                moveL_target_pose_2.speed = 0.1
-                move_state = 2
-                moveL_pub.publish(moveL_target_pose_2)
+                set_point1()
                 rospy.loginfo(f'更新运动指令,向point2移动保持高度为{set_height*1000}mm')
             elif move_state ==2:
-                moveL_target_pose = MoveL()
-                moveL_target_pose.Pose.position.x = 0.2545299
-                moveL_target_pose.Pose.position.y = 0.31842098
-                moveL_target_pose.Pose.position.z = set_height
-                moveL_target_pose.Pose.orientation.x = 0.6501861
-                moveL_target_pose.Pose.orientation.y = -0.759086
-                moveL_target_pose.Pose.orientation.z = -0.031065
-                moveL_target_pose.Pose.orientation.w = -0.008943
-                moveL_target_pose.speed = 0.1
-                move_state = 1
-                moveL_pub.publish(moveL_target_pose)
+                set_point2()
                 rospy.loginfo(f'更新运动指令,向point2移动保持高度为{set_height*1000}mm')
-                
         else:
-            rospy.logerr('高度指令未成功执行')
+            rospy.logerr('高度调节指令未成功执行')
             rospy.sleep(0.1)
+    elif move_state == 4:
+        if data.state:
+            rospy.loginfo('前期运动指令发送成功')
+            rospy.sleep(2)
+            set_point1()
+            move_state=1
+            rospy.sleep(0.1)
+        else:
+            rospy.logerr('前期运动指令未成功执行')
+    else:
+        if data.state:
+            rospy.loginfo('运动指令发送成功')
+        else:
+            rospy.logerr('运动指令未成功执行')
+
 
 def arm_state_callback(data):
     # 读取当前机械臂的高度 单位m
@@ -187,6 +215,37 @@ def query_arm_state():
     rospy.Subscriber('/rm_driver/ArmCurrentState', ArmState, arm_state_callback)
     rospy.loginfo('机械臂状态查询信息发布完毕')
 
+
+def set_point1():
+    global set_height,move_state
+    moveL_target_pose = MoveL()
+    moveL_target_pose.Pose.position.x = 0.2045299
+    moveL_target_pose.Pose.position.y = 0.31842098
+    moveL_target_pose.Pose.position.z = set_height
+    moveL_target_pose.Pose.orientation.x = 0.6501861
+    moveL_target_pose.Pose.orientation.y = -0.759086
+    moveL_target_pose.Pose.orientation.z = -0.031065
+    moveL_target_pose.Pose.orientation.w = -0.008943
+    moveL_target_pose.speed = 0.1
+    moveL_pub.publish(moveL_target_pose)
+    rospy.loginfo('point1目标发布')
+    rospy.sleep(0.1)
+
+def set_point2():
+    global set_height,move_state
+    moveL_target_pose_2 = MoveL()
+    moveL_target_pose_2.Pose.position.x = -0.2445299
+    moveL_target_pose_2.Pose.position.y = 0.31842098
+    moveL_target_pose_2.Pose.position.z = set_height
+    moveL_target_pose_2.Pose.orientation.x = 0.6501861
+    moveL_target_pose_2.Pose.orientation.y = -0.759086
+    moveL_target_pose_2.Pose.orientation.z = -0.031065
+    moveL_target_pose_2.Pose.orientation.w = -0.008943
+    moveL_target_pose_2.speed = 0.1
+    moveL_pub.publish(moveL_target_pose_2)
+    rospy.loginfo('point2目标发布')
+    rospy.sleep(0.1)
+
 def my_main():
     global set_height,catch_flag,move_state
     try:
@@ -206,77 +265,79 @@ def my_main():
 
         moveJ_P_pub.publish(moveJ_P_target_pose)
         rospy.sleep(5)
-        rospy.loginfo("The first trajectory has been executed")
-        rospy.loginfo("Prepare to execute Instruction MoveL")
-        
-        
-        moveL_target_pose = MoveL()
-        moveL_target_pose.Pose.position.x = -0.0245299
-        moveL_target_pose.Pose.position.y = 0.31842098
-        moveL_target_pose.Pose.position.z = 0.290527
-        moveL_target_pose.Pose.orientation.x = 0.6501861
-        moveL_target_pose.Pose.orientation.y = -0.759086
-        moveL_target_pose.Pose.orientation.z = -0.031065
-        moveL_target_pose.Pose.orientation.w = -0.008943
-        moveL_target_pose.speed = 0.1
-        moveL_pub.publish(moveL_target_pose)
-        rospy.loginfo('等待机械臂稳定')
-        rospy.sleep(5)
+        rospy.loginfo("MoveJ_P指令发送完毕")
         grip_msg = Gripper_Set()
         grip_msg.position = 1000  # 设置手爪打开位置
         catch_position_pub.publish(grip_msg)
         rospy.loginfo("等待初始化夹爪")
         catch_flag = 1      # 设置夹爪的标志位，
-        rospy.sleep(5)
+        rospy.sleep(3)
+        
+        moveL_target_pose = MoveL()
+        moveL_target_pose.Pose.position.x = -0.0245299
+        moveL_target_pose.Pose.position.y = 0.31842098
+        moveL_target_pose.Pose.position.z = set_height
+        moveL_target_pose.Pose.orientation.x = 0.6501861
+        moveL_target_pose.Pose.orientation.y = -0.759086
+        moveL_target_pose.Pose.orientation.z = -0.031065
+        moveL_target_pose.Pose.orientation.w = -0.008943
+        moveL_target_pose.speed = 0.1
+        move_state = 4     # 设置机械臂的运动状态
+        moveL_pub.publish(moveL_target_pose)
+        rospy.sleep(0.1)
+        rospy.loginfo('等待机械臂稳定')
+        
+        
     
         # moveL_target_pose_2 = MoveL()
         # moveL_target_pose_2 = moveL_target_pose
         # moveL_target_pose_2.Pose.position.x =  -0.1245299
         
         
+        
         rospy.Subscriber('distance', Float32, sensor_callback)
         rospy.loginfo('回调启用')
-        while not rospy.is_shutdown():
-            rospy.loginfo('机械臂即将运动至point2')
-            # moveL_target_pose_2 = MoveJ_P()
-            moveL_target_pose_2 = MoveL()
-            moveL_target_pose_2.Pose.position.x = -0.2845299
-            moveL_target_pose_2.Pose.position.y = 0.31842098
-            rospy.sleep(3) 
-            moveL_target_pose_2.Pose.position.z = set_height
-            moveL_target_pose_2.Pose.orientation.x = 0.6501861
-            moveL_target_pose_2.Pose.orientation.y = -0.759086
-            moveL_target_pose_2.Pose.orientation.z = -0.031065
-            moveL_target_pose_2.Pose.orientation.w = -0.008943
-            moveL_target_pose_2.speed = 0.1
+        # while not rospy.is_shutdown():
+        #     rospy.loginfo('机械臂即将运动至point2')
+        #     # moveL_target_pose_2 = MoveJ_P()
+        #     moveL_target_pose_2 = MoveL()
+        #     moveL_target_pose_2.Pose.position.x = -0.2445299
+        #     moveL_target_pose_2.Pose.position.y = 0.31842098
+        #     rospy.sleep(3) 
+        #     moveL_target_pose_2.Pose.position.z = set_height
+        #     moveL_target_pose_2.Pose.orientation.x = 0.6501861
+        #     moveL_target_pose_2.Pose.orientation.y = -0.759086
+        #     moveL_target_pose_2.Pose.orientation.z = -0.031065
+        #     moveL_target_pose_2.Pose.orientation.w = -0.008943
+        #     moveL_target_pose_2.speed = 0.1
 
-            move_state = 1  
-            # moveJ_P_pub.publish(moveL_target_pose_2)
+        #     move_state = 1  
+        #     # moveJ_P_pub.publish(moveL_target_pose_2)
             
-            moveL_pub.publish(moveL_target_pose_2)
+        #     moveL_pub.publish(moveL_target_pose_2)
             
-            rospy.loginfo('point2目标发布')
-            rospy.sleep(25)
+        #     rospy.loginfo('point2目标发布')
+        #     rospy.sleep(25)
             
-            rospy.loginfo('机械臂即将返回至point1')
-            # moveL_target_pose = MoveJ_P()
-            moveL_target_pose = MoveL()
-            moveL_target_pose.Pose.position.x = 0.2545299
-            moveL_target_pose.Pose.position.y = 0.31842098
-            rospy.sleep(3) 
-            moveL_target_pose.Pose.position.z = set_height
-            moveL_target_pose.Pose.orientation.x = 0.6501861
-            moveL_target_pose.Pose.orientation.y = -0.759086
-            moveL_target_pose.Pose.orientation.z = -0.031065
-            moveL_target_pose.Pose.orientation.w = -0.008943
-            moveL_target_pose.speed = 0.3
-            # catch_flag = 2
+        #     rospy.loginfo('机械臂即将返回至point1')
+        #     # moveL_target_pose = MoveJ_P()
+        #     moveL_target_pose = MoveL()
+        #     moveL_target_pose.Pose.position.x = 0.2045299
+        #     moveL_target_pose.Pose.position.y = 0.31842098
+        #     rospy.sleep(3) 
+        #     moveL_target_pose.Pose.position.z = set_height
+        #     moveL_target_pose.Pose.orientation.x = 0.6501861
+        #     moveL_target_pose.Pose.orientation.y = -0.759086
+        #     moveL_target_pose.Pose.orientation.z = -0.031065
+        #     moveL_target_pose.Pose.orientation.w = -0.008943
+        #     moveL_target_pose.speed = 0.3
+        #     # catch_flag = 2
 
-            # moveJ_P_pub.publish(moveL_target_pose)
-            moveL_pub.publish(moveL_target_pose)
-            rospy.loginfo('point1目标发布')
-            rospy.sleep(25)    
-        
+        #     # moveJ_P_pub.publish(moveL_target_pose)
+        #     moveL_pub.publish(moveL_target_pose)
+        #     rospy.loginfo('point1目标发布')
+        #     rospy.sleep(25)    
+        rospy.spin()
     except rospy.ROSInterruptException:
         rospy.loginfo('问题')
         pass
