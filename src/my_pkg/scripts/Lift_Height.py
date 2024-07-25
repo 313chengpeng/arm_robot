@@ -131,12 +131,16 @@ def sensor_callback(data):
             pre_state =  move_state   
             move_state = 3  
             adjust_height(err)
+        else:
+            rospy.sleep(0.1)
+            rospy.loginfo(f"高度调整中，当前误差：{err*1000}mm")
 
 def plan_state_callback(data):
     global move_completed,catch_flag,set_height,move_state  
+    rospy.loginfo('接收到机械臂运动状态信息')
     if move_state == 1 :
         if data.state:
-            rospy.loginfo('point运动指令发送成功')
+            rospy.loginfo('point1运动指令规划成功')
             if  catch_flag == 1:
                 rospy.loginfo("发布抓取命令")
                 gripper_cmd = Gripper_Pick()
@@ -147,7 +151,7 @@ def plan_state_callback(data):
                 grip_msg = Gripper_Set()
                 grip_msg.position = 1  # 设置手爪关闭位置
                 catch_position_pub.publish(grip_msg)
-                rospy.loginfo("抓取命令发布完成，等待释放")
+                rospy.loginfo("抓取命令发布完成")
                 rospy.sleep(3)
                 catch_flag = 0 # 仅执行一次抓取
             rospy.sleep(2)
@@ -162,13 +166,13 @@ def plan_state_callback(data):
             rospy.sleep(0.1)
     elif move_state == 2 :
         if data.state:
-            rospy.loginfo('point2运动指令发送成功')
+            rospy.loginfo('point2运动指令规划成功')
             rospy.sleep(2)
             set_point1()
             move_state=1
             rospy.sleep(0.1)
         else:
-            rospy.logerr('point2运动指令未成功执行,尝试重新发送')
+            rospy.logerr('point2运动指令未成功规划,尝试重新发送')
             set_point2()
             rospy.sleep(0.1)
     elif move_state == 3:

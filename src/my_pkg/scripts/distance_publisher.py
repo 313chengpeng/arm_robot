@@ -57,7 +57,7 @@ def read_distance():
                                 return distance
                         else:
                             rospy.logwarn("CRC校验失败")
-            time.sleep(1)  # 每秒检查一次
+            time.sleep(0.6)  # 每0.6秒检查一次
         
 
         if not received_data:
@@ -74,7 +74,7 @@ def read_distance():
 def distance_publisher():
     rospy.init_node('distance_publisher', anonymous=True)
     pub = rospy.Publisher('distance', Float32, queue_size=1) # queue_size表示缓存队列的大小
-    rate = rospy.Rate(1)  # 1 Hz
+    # rate = rospy.Rate(1)  # 1 Hz
 
     while not rospy.is_shutdown():
         distance = read_distance()
@@ -82,7 +82,7 @@ def distance_publisher():
             distance_mm = distance/1000 # 将mm转为m
             pub.publish(distance_mm)  # 发布距离
             rospy.loginfo(f"发布距离: {distance} mm")
-        rate.sleep()
+        # rate.sleep()
 
 if __name__ == '__main__':
     try:
